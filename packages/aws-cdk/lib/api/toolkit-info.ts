@@ -137,12 +137,6 @@ export class ToolkitInfo {
     const response = await ecr.createRepository({ repositoryName }).promise();
     repository = response.repository!;
 
-    // Better put a lifecycle policy on this so as to not cost too much money
-    await ecr.putLifecyclePolicy({
-      repositoryName,
-      lifecyclePolicyText: JSON.stringify(DEFAULT_REPO_LIFECYCLE)
-    }).promise();
-
     // Configure image scanning on push (helps in identifying software vulnerabilities, no additional charge)
     await ecr.putImageScanningConfiguration({
       repositoryName,
@@ -251,18 +245,3 @@ function getOutputValue(stack: aws.CloudFormation.Stack, output: string): string
   }
   return result;
 }
-
-export const DEFAULT_REPO_LIFECYCLE = {
-  rules: [
-    {
-      rulePriority: 100,
-      description: 'Retain only 5 images',
-      selection: {
-        tagStatus: 'any',
-        countType: 'imageCountMoreThan',
-        countNumber: 5,
-      },
-      action: { type: 'expire' }
-    }
-  ]
-};

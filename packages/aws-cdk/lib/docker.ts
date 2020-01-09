@@ -7,33 +7,20 @@ import { shell } from './os';
 
 /**
  * Build and upload a Docker image
- *
- * Permanently identifying images is a bit of a bust. Newer Docker version use
- * a digest (sha256:xxxx) as an image identifier, which is pretty good to avoid
- * spurious rebuilds. However, this digest is calculated over a manifest that
- * includes metadata that is liable to change. For example, as soon as we
- * push the Docker image to a repository, the digest changes. This makes the
- * digest worthless to determe whether we already pushed an image, for example.
- *
- * As a workaround, we calculate our own digest over parts of the manifest that
- * are unlikely to change, and tag based on that.
- *
- * When running in CI, we pull the latest image first and use it as cache for
- * the build. Generally pulling will be faster than building, especially for
- * Dockerfiles with lots of OS/code packages installation or changes only in
- * the bottom layers. When running locally chances are that we already have
- * layers cache available.
- *
- * CI is detected by the presence of the `CI` environment variable or
- * the `--ci` command line option.
  */
 export async function prepareContainerAsset(assemblyDir: string,
                                             asset: ContainerImageAssetMetadataEntry,
                                             toolkitInfo: ToolkitInfo,
-                                            reuse: boolean,
-                                            ci?: boolean): Promise<[CloudFormation.Parameter]> {
+                                            reuse: boolean): Promise<CloudFormation.Parameter[]> {
+
+  if (!asset.imageNameParameter) {
+    if (!asset.repositoryName || !asset.imageTag) {
+      throw new Error(`"repositoryName" and "imageTag" are both required if "imageParameterName" is omitted`);
+    }
+  }
 
   if (reuse) {
+    // TODO?
     return [
       { ParameterKey: asset.imageNameParameter, UsePreviousValue: true },
     ];
@@ -45,28 +32,27 @@ export async function prepareContainerAsset(assemblyDir: string,
 
   try {
     const ecr = await toolkitInfo.prepareEcrRepository(asset);
-    const latest = `${ecr.repositoryUri}:latest`;
 
-    let loggedIn = false;
-
-    // In CI we try to pull latest first
-    if (ci) {
-      await dockerLogin(toolkitInfo);
-      loggedIn = true;
-
-      try {
-        await shell(['docker', 'pull', latest]);
-      } catch (e) {
-        debug('Failed to pull latest image from ECR repository');
+    // if both repo name and image tag are explicitly defined, we assume the
+    // image is immutable and can skip build & push.
+    if (asset.repositoryName && asset.imageTag) {
+      debug(`checking if ${asset.repositoryName}:${asset.imageTag} already exists`);
+      if (await toolkitInfo.checkEcrImage(asset.repositoryName, asset.imageTag)) {
+        debug(`image already exists, skipping`);
+        return [];
       }
     }
+
+    // we use "latest" for image tag for backwards compatibility with pre-1.21.0 apps.
+    const imageTag = asset.imageTag ?? 'latest';
+    const imageUri = `${ecr.repositoryUri}:${imageTag}`;
 
     const buildArgs = ([] as string[]).concat(...Object.entries(asset.buildArgs || {}).map(([k, v]) => ['--build-arg', `${k}=${v}`]));
 
     const baseCommand = [
       'docker', 'build',
       ...buildArgs,
-      '--tag', latest,
+      '--tag', imageUri,
       contextPath
     ];
 
@@ -78,33 +64,33 @@ export async function prepareContainerAsset(assemblyDir: string,
       baseCommand.push('--file', asset.file);
     }
 
-    const command = ci
-      ? [...baseCommand, '--cache-from', latest] // This does not fail if latest is not available
-      : baseCommand;
-    await shell(command);
+    await shell(baseCommand);
 
     // Login and push
-    if (!loggedIn) { // We could be already logged in if in CI
-      await dockerLogin(toolkitInfo);
-      loggedIn = true;
-    }
+    await dockerLogin(toolkitInfo);
 
     // There's no way to make this quiet, so we can't use a PleaseHold. Print a header message.
     print(` ⌛ Pushing Docker image for ${contextPath}; this may take a while.`);
-    await shell(['docker', 'push', latest]);
+    await shell(['docker', 'push', imageUri]);
     debug(` 👑  Docker image for ${contextPath} pushed.`);
 
-    // Get the (single) repo-digest for latest, which'll be <ecr.repositoryUrl>@sha256:<repoImageSha256>
-    const repoDigests = (await shell(['docker', 'image', 'inspect', latest, '--format', '{{range .RepoDigests}}{{.}}|{{end}}'])).trim();
-    const requiredPrefix = `${ecr.repositoryUri}@sha256:`;
-    const repoDigest = repoDigests.split('|').find(digest => digest.startsWith(requiredPrefix));
-    if (!repoDigest) {
-      throw new Error(`Unable to identify repository digest (none starts with ${requiredPrefix}) in:\n${repoDigests}`);
+    // backwards compatibility with pre 1.21.0, wire imageNameParameter to the actual image name
+    if (asset.imageNameParameter) {
+      // Get the (single) repo-digest for latest, which'll be <ecr.repositoryUrl>@sha256:<repoImageSha256>
+      const repoDigests = (await shell(['docker', 'image', 'inspect', imageUri, '--format', '{{range .RepoDigests}}{{.}}|{{end}}'])).trim();
+      const requiredPrefix = `${ecr.repositoryUri}@sha256:`;
+      const repoDigest = repoDigests.split('|').find(digest => digest.startsWith(requiredPrefix));
+      if (!repoDigest) {
+        throw new Error(`Unable to identify repository digest (none starts with ${requiredPrefix}) in:\n${repoDigests}`);
+      }
+
+      return [
+        { ParameterKey: asset.imageNameParameter, ParameterValue: repoDigest.replace(ecr.repositoryUri, ecr.repositoryName) },
+      ];
     }
 
-    return [
-      { ParameterKey: asset.imageNameParameter, ParameterValue: repoDigest.replace(ecr.repositoryUri, ecr.repositoryName) },
-    ];
+    // no parameters needed post 1.21.0
+    return [ ];
   } catch (e) {
     if (e.code === 'ENOENT') {
       // tslint:disable-next-line:max-line-length

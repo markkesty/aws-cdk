@@ -1,6 +1,6 @@
 import * as cxapi from '@aws-cdk/cx-api';
 import * as sinon from 'sinon';
-import { DEFAULT_REPO_LIFECYCLE, ToolkitInfo } from '../lib';
+import { ToolkitInfo } from '../lib';
 import { prepareContainerAsset } from '../lib/docker';
 import * as os from '../lib/os';
 import { MockSDK } from './util/mock-sdk';
@@ -93,12 +93,11 @@ test('derives repository name from asset id', async () => {
   }
 
   // THEN
-  expect(createdName).toBe('cdk/stack-construct-abc123');
+  expect(createdName).toBe('cdk-assets-e0a90c27');
 });
 
 test('configures lifecycle policy and image scanning', async () => {
   // GIVEN
-  let putLifecyclePolicyParams;
   let putImageScanningConfigurationParams;
 
   const sdk = new MockSDK();
@@ -113,11 +112,6 @@ test('configures lifecycle policy and image scanning', async () => {
           repositoryUri: 'uri'
         }
       };
-    },
-
-    putLifecyclePolicy(params) {
-      putLifecyclePolicyParams = params;
-      return {};
     },
 
     putImageScanningConfiguration(params) {
@@ -150,12 +144,6 @@ test('configures lifecycle policy and image scanning', async () => {
   } catch (e) {
     if (!/STOPTEST/.test(e.toString())) { throw e; }
   }
-
-  // THEN
-  expect(putLifecyclePolicyParams).toEqual({
-    repositoryName: 'some-name',
-    lifecyclePolicyText: JSON.stringify(DEFAULT_REPO_LIFECYCLE)
-  });
 
   expect(putImageScanningConfigurationParams).toEqual({
     repositoryName: 'some-name',
@@ -197,13 +185,13 @@ test('passes the correct target to docker build', async () => {
   };
 
   try {
-    await prepareContainerAsset('.', asset, toolkit, false, false);
+    await prepareContainerAsset('.', asset, toolkit, false);
   } catch (e) {
     if (!/STOPTEST/.test(e.toString())) { throw e; }
   }
 
   // THEN
-  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:latest`, '/foo', '--target', 'a-target'];
+  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:1234567890abcdef`, '/foo', '--target', 'a-target'];
   expect(shellStub.calledWith(command)).toBeTruthy();
 
   prepareEcrRepositoryStub.restore();
@@ -247,7 +235,7 @@ test('passes the correct args to docker build', async () => {
   }
 
   // THEN
-  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:latest`, '/foo'];
+  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:1234567890abcdef`, '/foo'];
   expect(shellStub.calledWith(command)).toBeTruthy();
 
   prepareEcrRepositoryStub.restore();
@@ -291,7 +279,7 @@ test('relative path', async () => {
   }
 
   // THEN
-  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:latest`, '/assembly/dir/root/relative-to-assembly'];
+  const command = ['docker', 'build', '--build-arg', 'a=b', '--build-arg', 'c=d', '--tag', `uri:1234567890abcdef`, '/assembly/dir/root/relative-to-assembly'];
   expect(shellStub.calledWith(command)).toBeTruthy();
 
   prepareEcrRepositoryStub.restore();

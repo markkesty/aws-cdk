@@ -3,7 +3,6 @@ import * as ecr from '@aws-cdk/aws-ecr';
 import { Construct, Stack, Token } from '@aws-cdk/core';
 import * as fs from 'fs';
 import * as path from 'path';
-import { AdoptedRepository } from './adopted-repository';
 
 export interface DockerImageAssetProps extends assets.FingerprintOptions {
   /**
@@ -18,7 +17,7 @@ export interface DockerImageAssetProps extends assets.FingerprintOptions {
    * from a Kubernetes Pod. Note, this is only the repository name, without the
    * registry and the tag parts.
    *
-   * @default - automatically derived from the asset's ID.
+   * @default - the default ECR repository for CDK assets
    */
   readonly repositoryName?: string;
 
@@ -101,6 +100,11 @@ export class DockerImageAsset extends Construct implements assets.IAsset {
     if (props.file)           { extraHash.file = props.file; }
     if (props.repositoryName) { extraHash.repositoryName = props.repositoryName; }
 
+    // add "salt" to the hash in order to invalidate the image in the upgrade to
+    // 1.21.0 which removes the AdoptedRepository resource (and will cause the
+    // deletion of the ECR repository the app used.
+    extraHash.version = '1.21.0';
+
     const staging = new assets.Staging(this, 'Staging', {
       ...props,
       exclude,
@@ -118,17 +122,11 @@ export class DockerImageAsset extends Construct implements assets.IAsset {
       dockerBuildArgs: props.buildArgs,
       dockerBuildTarget: props.target,
       dockerFile: file,
-      repositoryName: props.repositoryName || `cdk/${this.node.uniqueId.replace(/[:/]/g, '-').toLowerCase()}`,
-      sourceHash: staging.sourceHash
+      repositoryName: props.repositoryName,
+      sourceHash: staging.sourceHash,
     });
 
-    // Require that repository adoption happens first, so we route the
-    // input ARN into the Custom Resource and then get the URI which we use to
-    // refer to the image FROM the Custom Resource.
-    //
-    // If adoption fails (because the repository might be twice-adopted), we
-    // haven't already started using the image.
-    this.repository = new AdoptedRepository(this, 'AdoptRepository', { repositoryName: location.repositoryName });
+    this.repository = ecr.Repository.fromRepositoryName(this, 'Repository', location.repositoryName);
     this.imageUri = location.imageUri;
   }
 }

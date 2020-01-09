@@ -22,6 +22,8 @@ interface AdoptedRepositoryProps {
  * adopting will make the repository "owned" by the stack. It will be cleaned
  * up when the stack gets deleted, to avoid leaving orphaned repositories on
  * stack cleanup.
+ *
+ * @deprecated this class is no longer used for ECR assets
  */
 export class AdoptedRepository extends ecr.RepositoryBase {
   public readonly repositoryName: string;

@@ -1,6 +1,6 @@
 import { expect, haveResource, SynthUtils } from '@aws-cdk/assert';
 import * as iam from '@aws-cdk/aws-iam';
-import { App, Construct, Lazy, Resource, Stack } from '@aws-cdk/core';
+import { App, Lazy, Stack } from '@aws-cdk/core';
 import { ASSET_METADATA } from '@aws-cdk/cx-api';
 import * as fs from 'fs';
 import { Test } from 'nodeunit';
@@ -21,32 +21,11 @@ export = {
 
     // THEN
     const template = SynthUtils.synthesize(stack).template;
-    test.deepEqual(template.Parameters.AssetParameters1a17a141505ac69144931fe263d130f4612251caa4bbbdaf68a44ed0f405439cImageName1ADCADB3, {
+    test.deepEqual(template.Parameters.AssetParameterse10141560538b4cbac02df1cd102b7b2ab49a8b9051e33aa506b405f91f089f5ImageNameAAC01E80, {
       Type: 'String',
-      Description: 'ECR repository name and tag for asset "1a17a141505ac69144931fe263d130f4612251caa4bbbdaf68a44ed0f405439c"'
+      Description: 'ECR repository name and tag for asset "e10141560538b4cbac02df1cd102b7b2ab49a8b9051e33aa506b405f91f089f5"'
     });
 
-    test.done();
-  },
-
-  'repository name is derived from node unique id'(test: Test) {
-    // GIVEN
-    const stack = new Stack();
-    class CoolConstruct extends Resource {
-      constructor(scope: Construct, id: string) {
-        super(scope, id);
-      }
-    }
-    const coolConstruct = new CoolConstruct(stack, 'CoolConstruct');
-
-    // WHEN
-    new DockerImageAsset(coolConstruct, 'Image', {
-      directory: path.join(__dirname, 'demo-image'),
-    });
-
-    // THEN
-    const assetMetadata = stack.node.metadata.find(({ type }) => type === ASSET_METADATA);
-    test.deepEqual(assetMetadata && assetMetadata.data.repositoryName, 'cdk/coolconstructimage78ab38fc');
     test.done();
   },
 
@@ -131,13 +110,31 @@ export = {
                 "",
                 [
                   "arn:",
-                  { "Ref": "AWS::Partition" },
+                  {
+                    "Ref": "AWS::Partition"
+                  },
                   ":ecr:",
-                  { "Ref": "AWS::Region" },
+                  {
+                    "Ref": "AWS::Region"
+                  },
                   ":",
-                  { "Ref": "AWS::AccountId" },
+                  {
+                    "Ref": "AWS::AccountId"
+                  },
                   ":repository/",
-                  { "Fn::GetAtt": ["ImageAdoptRepositoryE1E84E35", "RepositoryName"] }
+                  {
+                    "Fn::Select": [
+                      0,
+                      {
+                        "Fn::Split": [
+                          "@sha256:",
+                          {
+                            "Ref": "AssetParameterse10141560538b4cbac02df1cd102b7b2ab49a8b9051e33aa506b405f91f089f5ImageNameAAC01E80"
+                          }
+                        ]
+                      }
+                    ]
+                  }
                 ]
               ]
             }
@@ -156,51 +153,6 @@ export = {
           "Ref": "MyUserDC45028B"
         }
       ]
-    }));
-
-    test.done();
-  },
-
-  'asset.repository.addToResourcePolicy can be used to modify the ECR resource policy via the adoption custom resource'(test: Test) {
-    // GIVEN
-    const stack = new Stack();
-    const asset = new DockerImageAsset(stack, 'Image', {
-      directory: path.join(__dirname, 'demo-image')
-    });
-
-    // WHEN
-    asset.repository.addToResourcePolicy(new iam.PolicyStatement({
-      actions: ['BAM:BOOM'],
-      principals: [new iam.ServicePrincipal('test.service')]
-    }));
-
-    // THEN
-    expect(stack).to(haveResource('Custom::ECRAdoptedRepository', {
-      "RepositoryName": {
-        "Fn::Select": [
-          0,
-          {
-            "Fn::Split": [
-              "@sha256:",
-              {
-                "Ref": "AssetParameters1a17a141505ac69144931fe263d130f4612251caa4bbbdaf68a44ed0f405439cImageName1ADCADB3"
-              }
-            ]
-          }
-        ]
-      },
-      "PolicyDocument": {
-        "Statement": [
-          {
-            "Action": "BAM:BOOM",
-            "Effect": "Allow",
-            "Principal": {
-              "Service": "test.service"
-            }
-          }
-        ],
-        "Version": "2012-10-17"
-      }
     }));
 
     test.done();
