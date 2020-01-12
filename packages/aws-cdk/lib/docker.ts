@@ -49,7 +49,7 @@ export async function prepareContainerAsset(assemblyDir: string,
 
     const buildArgs = ([] as string[]).concat(...Object.entries(asset.buildArgs || {}).map(([k, v]) => ['--build-arg', `${k}=${v}`]));
 
-    const baseCommand = [
+    const buildCommand = [
       'docker', 'build',
       ...buildArgs,
       '--tag', imageUri,
@@ -57,14 +57,14 @@ export async function prepareContainerAsset(assemblyDir: string,
     ];
 
     if (asset.target) {
-      baseCommand.push('--target', asset.target);
+      buildCommand.push('--target', asset.target);
     }
 
     if (asset.file) {
-      baseCommand.push('--file', asset.file);
+      buildCommand.push('--file', asset.file);
     }
 
-    await shell(baseCommand);
+    await shell(buildCommand);
 
     // Login and push
     await dockerLogin(toolkitInfo);

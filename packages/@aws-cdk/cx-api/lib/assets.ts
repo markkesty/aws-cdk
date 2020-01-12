@@ -81,8 +81,11 @@ export interface ContainerImageAssetMetadataEntry extends BaseAssetMetadataEntry
    * ECR Repository name and repo digest (separated by "@sha256:") where this
    * image is stored.
    *
-   * @default undefined If not specified, `repositoryName` and `imageTag` are required because
-   * otherwise how will the stack know where to find the asset, ha?
+   * @default undefined If not specified, `repositoryName` and `imageTag` are
+   * required because otherwise how will the stack know where to find the asset,
+   * ha?
+   * @deprecated specify `repositoryName` and `imageTag` instead, and then you
+   * know where the image will go.
    */
   readonly imageNameParameter?: string;
 
@@ -98,8 +101,12 @@ export interface ContainerImageAssetMetadataEntry extends BaseAssetMetadataEntry
   readonly repositoryName?: string;
 
   /**
-   * The docker image tag to use for tagging pushed images.
-   * @default "latest"
+   * The docker image tag to use for tagging pushed images. This field is
+   * required if `imageParameterName` is ommited (otherwise, the app won't be
+   * able to find the image).
+   * @default - if this is omitted, the CLI will determine the image tag and
+   * pass it through the cloudformation parameter specified by
+   * `imageNameParameter`.
    */
   readonly imageTag?: string;
 
